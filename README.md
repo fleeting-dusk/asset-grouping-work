@@ -116,9 +116,7 @@ $env:UES_COOKIE='JSESSIONID=...; token=...; language=zh-CN'
 ## 比对导出的分组 Excel
 
 ```powershell
-& 'C:\Users\Heoflare\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' `
-  'D:\tmp\asset-grouping-work\asset_grouping_runner.py' `
-  --compare-export 'C:\Users\Heoflare\Downloads\分组数据20260617124022.xlsx'
+'python .\asset_grouping_runner.py --compare-export .\你的分组数据表'
 ```
 
 这个功能会实时查询平台 `/groups`，再和导出的 Excel 分组路径比对，输出：
@@ -130,7 +128,7 @@ $env:UES_COOKIE='JSESSIONID=...; token=...; language=zh-CN'
 比对报告会写到：
 
 ```text
-D:\tmp\asset-grouping-work\group-export-compare-latest.json
+.\asset-grouping-work\group-export-compare-latest.json
 ```
 
 ## 正式执行
