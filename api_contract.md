@@ -4,12 +4,12 @@
 
 ## 通用
 
-- Base URL: `https://172.21.193.214:53443`
+- Base URL: `https://IP:Prot`
 - 请求头:
   - `Accept: application/json, text/plain, */*`
   - `Content-Type: application/json`，仅 POST 必需
   - `Cookie: <运行时提供>`，不要写入模板或代码
-  - `Referer: https://172.21.193.214:53443/ues/base/terminals`
+  - `Referer: https://IP:Prot/ues/base/terminals`
 - HTTPS 证书如为内网自签，执行器需要支持忽略证书校验的开关。
 - 成功判断以 `code === 0` 为主，部分接口还会带 `success: true`。
 
