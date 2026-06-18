@@ -6,7 +6,7 @@
 - `资产分组导入模板.example.xlsx`: 可提交到 GitHub 的脱敏模板示例。
 - `asset_grouping_runner.py`: Python 主执行脚本。
 - `asset_grouping_config.json`: 本地配置文件，可放 API 地址、Cookie、模板路径等。
-- `asset_grouping_config.example.json`: 可提交到 GitHub 的脱敏配置示例。
+- `asset_grouping_config.example.json`: 配置示例。
 - `api_contract.md`: 已确认的办公智盾接口契约。
 - `asset-grouping-run-latest.json`: 最近一次运行报告，记录分组计划、终端查询、逐台移动任务、复查结果、错误和警告。
 - `asset-grouping-summary-latest.txt`: 最近一次运行的人类可读摘要，适合快速核对内外网分布、分组动作、终端匹配数、移动复查数。
@@ -33,12 +33,7 @@
 
 ## 安全原则
 
-- Cookie/Token 不写入模板、不写入脚本、不写入报告。
-- 如果选择写入 `asset_grouping_config.json`，它只保存在本机工作目录；不要外发这个文件。
-- GitHub 仓库只提交脚本、说明、接口契约、脱敏配置示例和脱敏模板示例。
-- 真实 `asset_grouping_config.json`、真实 `资产分组导入模板.xlsx`、运行报告和导出结果已加入 `.gitignore`，避免误提交 Cookie、MAC、资产编号等敏感数据。
-- 默认不执行平台变更。
-- 正式执行移动终端时，脚本会逐台提交 `/terminals/move`，不会再把一批 GUID 一次性发出去。
+- 正式执行移动终端时，脚本会逐台提交 `/terminals/move`，不会把一批 GUID 一次性发出去。
 - 每台终端移动后会按 MAC 回查平台，确认同一个终端 GUID 的 `groupGuid` 已经变成目标分组；没生效会写入错误报告。
 - 控制台会显示分组保障、终端查询、移动复查三个阶段的进度条，进度条完成后才会输出最终报告路径。
 - 真正执行必须双确认：
@@ -49,16 +44,16 @@
 
 脚本会读取 `终端清单` 里的 `网络区域`：
 
-- `内网` 连接 `https://172.21.193.214:53443`
-- `外网` 连接 `https://192.168.224.84:53443`
+- `内网` 连接 `https://IP:Prot`
+- `外网` 连接 `https://IP:Prot`
 - 空白或无法识别时，按配置里的 `default_network` 处理，默认是 `内网`
 
 配置文件只保留内外网专用 Cookie：
 
 ```json
 {
-  "internal_api_base_url": "https://172.21.193.214:53443",
-  "external_api_base_url": "https://192.168.224.84:53443",
+  "internal_api_base_url": "https://IP:Prot",
+  "external_api_base_url": "https://IP:Prot",
   "internal_cookie": "",
   "external_cookie": ""
 }
@@ -69,9 +64,7 @@
 ## 本地解析，不访问平台
 
 ```powershell
-& 'C:\Users\Heoflare\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' `
-  'D:\tmp\asset-grouping-work\asset_grouping_runner.py' `
-  --local-only
+'python .\asset_grouping_runner.py --local-only' 
 ```
 
 ## 终端交互界面
@@ -79,8 +72,7 @@
 直接运行脚本会进入交互界面：
 
 ```powershell
-& 'C:\Users\Heoflare\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' `
-  'D:\tmp\asset-grouping-work\asset_grouping_runner.py'
+'python .\asset_grouping_runner.py' 
 ```
 
 菜单里可以：
@@ -97,15 +89,13 @@
 ## 初始化/补全配置文件
 
 ```powershell
-& 'C:\Users\Heoflare\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' `
-  'D:\tmp\asset-grouping-work\asset_grouping_runner.py' `
-  --init-config
+'python .\asset_grouping_runner.py --local-only --init-config'
 ```
 
 配置文件路径：
 
 ```text
-D:\tmp\asset-grouping-work\asset_grouping_config.json
+asset-grouping-work\asset_grouping_config.json
 ```
 
 ## 平台 dry-run，查平台但不新建/不移动
@@ -113,9 +103,7 @@ D:\tmp\asset-grouping-work\asset_grouping_config.json
 ```powershell
 $env:UES_COOKIE='JSESSIONID=...; token=...; language=zh-CN'
 
-& 'C:\Users\Heoflare\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' `
-  'D:\tmp\asset-grouping-work\asset_grouping_runner.py' `
-  --run
+'python .\asset_grouping_runner.py --run' 
 ```
 
 这个模式会：
@@ -156,9 +144,7 @@ D:\tmp\asset-grouping-work\group-export-compare-latest.json
 ```powershell
 $env:UES_COOKIE='JSESSIONID=...; token=...; language=zh-CN'
 
-& 'C:\Users\Heoflare\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' `
-  'D:\tmp\asset-grouping-work\asset_grouping_runner.py' `
-  --execute
+'python .\asset_grouping_runner.py --execute'
 ```
 
 正式执行时：
@@ -187,15 +173,13 @@ $env:UES_COOKIE='JSESSIONID=...; token=...; language=zh-CN'
 可以单独导出不合法 MAC 清单：
 
 ```powershell
-& 'C:\Users\Heoflare\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' `
-  'D:\tmp\asset-grouping-work\asset_grouping_runner.py' `
-  --export-invalid-mac
+'python .\asset_grouping_runner.py --export-invalid-mac'
 ```
 
 默认输出：
 
 ```text
-D:\tmp\asset-grouping-work\invalid-mac-latest.xlsx
+.\asset-grouping-work\invalid-mac-latest.xlsx
 ```
 
 ## 导出未查询到终端
@@ -203,15 +187,13 @@ D:\tmp\asset-grouping-work\invalid-mac-latest.xlsx
 这个功能读取最近一次平台 dry-run 或正式执行报告，把 `/terminals/query` 返回 `not_found` 的终端导出成 Excel。它不能只靠本地解析判断，必须先访问过平台。
 
 ```powershell
-& 'C:\Users\Heoflare\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe' `
-  'D:\tmp\asset-grouping-work\asset_grouping_runner.py' `
-  --export-not-found-terminals
+'python .\asset_grouping_runner.py --export-not-found-terminals'
 ```
 
 默认输出：
 
 ```text
-D:\tmp\asset-grouping-work\not-found-terminals-latest.xlsx
+.\asset-grouping-work\not-found-terminals-latest.xlsx
 ```
 
 导出字段包含源行、网络、资产编号、原 MAC、查询 MAC、主机名、责任科室、目标分组路径、目标来源、位置和说明。
