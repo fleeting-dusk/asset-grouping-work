@@ -236,6 +236,54 @@ def expand_group_paths(paths: list[str], separator: str = ">") -> list[str]:
     return list(expanded)
 
 
+def compose_group_description(description: Any, remark: Any) -> str:
+    description_text = text(description)
+    remark_text = text(remark)
+    if description_text and remark_text:
+        return f"{description_text}\n备注：{remark_text}"
+    if remark_text:
+        return f"备注：{remark_text}"
+    return description_text
+
+
+def multiline_text(value: Any) -> str:
+    if value is None:
+        return ""
+    lines = [" ".join(str(line).split()).strip() for line in str(value).replace("\r\n", "\n").replace("\r", "\n").split("\n")]
+    return "\n".join(line for line in lines if line)
+
+
+def remark_already_present(existing: Any, remark: Any) -> bool:
+    remark_text = text(remark)
+    if not remark_text:
+        return True
+    for line in multiline_text(existing).split("\n"):
+        compact = line.replace(" ", "")
+        if compact.startswith("备注："):
+            if remark_text.replace(" ", "") in compact[len("备注：") :]:
+                return True
+        if compact.startswith("备注:"):
+            if remark_text.replace(" ", "") in compact[len("备注:") :]:
+                return True
+    return False
+
+
+def merge_group_description(existing: Any, description: Any, remark: Any) -> str:
+    current = multiline_text(existing)
+    description_text = text(description)
+    remark_text = text(remark)
+    additions: list[str] = []
+    if not current and description_text:
+        additions.append(description_text)
+    if remark_text and not remark_already_present(current, remark_text):
+        additions.append(f"备注：{remark_text}")
+    if not current:
+        return "\n".join(additions)
+    if not additions:
+        return current
+    return f"{current}\n" + "\n".join(additions)
+
+
 def chunks(items: list[str], size: int) -> list[list[str]]:
     return [items[index : index + size] for index in range(0, len(items), size)]
 
@@ -367,7 +415,9 @@ def load_template_plan(template_path: Path, default_network: str = "internal") -
             {
                 "sourceRow": row["__rowNumber"],
                 "path": path,
-                "description": text(row.get("分组描述")),
+                "description": compose_group_description(row.get("分组描述"), row.get("备注")),
+                "descriptionText": text(row.get("分组描述")),
+                "remark": text(row.get("备注")),
                 "allowCreate": text(row.get("是否允许新建")).upper() != "N",
             }
         )
@@ -584,6 +634,8 @@ def load_template_plan(template_path: Path, default_network: str = "internal") -
 
     allow_create_by_path = {row["path"]: row["allowCreate"] for row in group_rows}
     description_by_path = {row["path"]: row["description"] for row in group_rows}
+    description_text_by_path = {row["path"]: row["descriptionText"] for row in group_rows}
+    remark_by_path = {row["path"]: row["remark"] for row in group_rows}
     expanded_paths = expand_group_paths(list(target_paths), separator)
     expanded_paths.sort(key=lambda path: (len(split_path(path, separator)), path))
     used_group_paths = set(expanded_paths)
@@ -600,6 +652,8 @@ def load_template_plan(template_path: Path, default_network: str = "internal") -
                 "name": parts[-1],
                 "parentPath": separator.join(parts[:-1]),
                 "description": description_by_path.get(path, ""),
+                "descriptionText": description_text_by_path.get(path, ""),
+                "remark": remark_by_path.get(path, ""),
                 "allowCreate": allow_create_by_path.get(path, True),
                 "declaredInTemplate": any(row["path"] == path for row in group_rows),
             }
@@ -708,6 +762,29 @@ class ApiClient:
         assert_api_ok(data, f"POST /groups {name}")
         return data.get("data") or {}
 
+    def update_group_description(self, group: dict[str, Any], description: str) -> dict[str, Any]:
+        raw = group.get("raw") or {}
+        payload = {
+            "description": description or "",
+            "lockChildGroupPolicy": bool(raw.get("lockChildGroupPolicy", False)),
+            "name": text(group.get("name") or raw.get("name")),
+            "parentGuid": text(group.get("parentGuid") or raw.get("parentGuid")),
+            "policyType": text(raw.get("policyType")),
+            "autoGroupRule": raw.get("autoGroupRule")
+            or {
+                "ruleItemsBatch": [],
+                "reGroup": 0,
+                "syncBind": False,
+            },
+        }
+        for key in ["id", "guid", "policyGuid", "templateGuid"]:
+            value = raw.get(key) if key != "guid" else group.get("guid") or raw.get("guid")
+            if value not in (None, ""):
+                payload[key] = value
+        data = self.request("POST", "/groups", payload)
+        assert_api_ok(data, f"POST /groups update {payload['name']}")
+        return data.get("data") or {}
+
     def query_terminals_by_mac(self, scope_guid: str, mac: str, page_size: int) -> list[dict[str, Any]]:
         terminals: list[dict[str, Any]] = []
         cur_page = 1
@@ -771,6 +848,7 @@ def flatten_groups(nodes: list[dict[str, Any]], separator: str = ">", parent_pat
                 "guid": text(node.get("guid")),
                 "name": name,
                 "parentGuid": text(node.get("parentGuid")),
+                "description": multiline_text(node.get("description")),
                 "path": path,
                 "raw": node,
             }
@@ -898,7 +976,46 @@ def ensure_groups(client: ApiClient, plan: dict[str, Any], execute: bool, report
 
                 existing = index["byPath"].get(group["path"])
                 if existing:
-                    report["groups"].append({"action": "ensure_group", "status": "exists", "path": group["path"], "guid": existing["guid"]})
+                    existing_description = multiline_text(existing.get("description") or (existing.get("raw") or {}).get("description"))
+                    merged_description = merge_group_description(existing_description, group.get("descriptionText", ""), group.get("remark", ""))
+                    if merged_description != existing_description:
+                        if not execute:
+                            report["groups"].append(
+                                {
+                                    "action": "update_group_description",
+                                    "status": "dry_run",
+                                    "path": group["path"],
+                                    "guid": existing["guid"],
+                                    "descriptionBefore": existing_description,
+                                    "descriptionAfter": merged_description,
+                                    "remark": group.get("remark", ""),
+                                }
+                            )
+                        else:
+                            updated = client.update_group_description(existing, merged_description)
+                            existing["description"] = merged_description
+                            existing.setdefault("raw", {}).update(updated or {})
+                            report["groups"].append(
+                                {
+                                    "action": "update_group_description",
+                                    "status": "updated",
+                                    "path": group["path"],
+                                    "guid": existing["guid"],
+                                    "descriptionBefore": existing_description,
+                                    "descriptionAfter": merged_description,
+                                    "remark": group.get("remark", ""),
+                                }
+                            )
+                    else:
+                        report["groups"].append(
+                            {
+                                "action": "ensure_group",
+                                "status": "exists",
+                                "path": group["path"],
+                                "guid": existing["guid"],
+                                "description": existing_description,
+                            }
+                        )
                     continue
 
                 if not group["allowCreate"] or not plan["config"]["createMissingGroups"]:
@@ -913,7 +1030,18 @@ def ensure_groups(client: ApiClient, plan: dict[str, Any], execute: bool, report
                     continue
 
                 if not execute:
-                    report["groups"].append({"action": "create_group", "status": "dry_run", "path": group["path"], "name": group["name"], "parentPath": group["parentPath"], "parentGuid": parent["guid"]})
+                    report["groups"].append(
+                        {
+                            "action": "create_group",
+                            "status": "dry_run",
+                            "path": group["path"],
+                            "name": group["name"],
+                            "parentPath": group["parentPath"],
+                            "parentGuid": parent["guid"],
+                            "description": group.get("description", ""),
+                            "remark": group.get("remark", ""),
+                        }
+                    )
                     continue
 
                 created = client.create_group(group["name"], parent["guid"], group.get("description", ""))
@@ -926,7 +1054,17 @@ def ensure_groups(client: ApiClient, plan: dict[str, Any], execute: bool, report
                 }
                 index["byPath"][group["path"]] = created_group
                 index["flattened"].append(created_group)
-                report["groups"].append({"action": "create_group", "status": "created", "path": group["path"], "guid": created_group["guid"], "parentGuid": parent["guid"]})
+                report["groups"].append(
+                    {
+                        "action": "create_group",
+                        "status": "created",
+                        "path": group["path"],
+                        "guid": created_group["guid"],
+                        "parentGuid": parent["guid"],
+                        "description": group.get("description", ""),
+                        "remark": group.get("remark", ""),
+                    }
+                )
             finally:
                 progress.update(detail=group.get("path", ""))
     except Exception:

@@ -79,7 +79,7 @@ GET /groups/{groupGuid}
 POST /groups
 ```
 
-请求体:
+请求体，新建:
 
 ```json
 {
@@ -117,6 +117,33 @@ POST /groups
 - 按模板 `分组树.完整分组路径` 从浅到深创建缺失分组。
 - 创建前必须先通过路径索引确认父分组 GUID。
 - 创建成功后要把返回的 `data.guid` 写回内存索引，后续子组和移动终端会用到。
+
+请求体，更新已有分组描述/备注:
+
+```json
+{
+  "id": 0,
+  "guid": "",
+  "description": "",
+  "lockChildGroupPolicy": false,
+  "name": "",
+  "parentGuid": "",
+  "policyType": "",
+  "autoGroupRule": {
+    "ruleItemsBatch": [],
+    "reGroup": 0,
+    "syncBind": false
+  }
+}
+```
+
+程序用途:
+
+- 已有分组不会覆盖原 `description`。
+- 如果平台 `description` 为空，程序会补入模板 `分组树.分组描述` 和 `备注`。
+- 如果平台 `description` 已有内容，程序只会把缺少的模板 `分组树.备注` 追加到末尾。
+- 如果平台 `description` 已包含同一条模板备注，则跳过，避免重复追加。
+- `guid`、`name`、`parentGuid`、`id` 等字段必须先通过 `GET /groups` 获取。
 
 ## 查询终端
 
