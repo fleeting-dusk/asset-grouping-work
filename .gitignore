@@ -1,0 +1,24 @@
+# Local secrets
+asset_grouping_config.json
+.env
+
+# Real operational data
+资产分组导入模板.xlsx
+资产分组导入模板.before-*.xlsx
+资产分组导入模板-已规划.xlsx
+
+# Generated reports and exports
+asset-grouping-run-*.json
+asset-grouping-run-latest.json
+asset-grouping-summary-*.txt
+asset-grouping-summary-latest.txt
+group-export-compare-*.json
+group-export-compare-latest.json
+invalid-mac-*.xlsx
+invalid-mac-latest.xlsx
+not-found-terminals-*.xlsx
+not-found-terminals-latest.xlsx
+
+# Python cache
+__pycache__/
+*.py[cod]

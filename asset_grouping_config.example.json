@@ -1,0 +1,13 @@
+{
+  "template_path": "D:/tmp/asset-grouping-work/资产分组导入模板.xlsx",
+  "output_dir": "D:/tmp/asset-grouping-work",
+  "api_base_url": "https://172.21.193.214:53443",
+  "internal_api_base_url": "https://172.21.193.214:53443",
+  "external_api_base_url": "https://192.168.224.84:53443",
+  "query_scope_path": "全部终端",
+  "internal_cookie": "",
+  "external_cookie": "",
+  "default_network": "内网",
+  "strict_tls": false,
+  "keep_history": false
+}
