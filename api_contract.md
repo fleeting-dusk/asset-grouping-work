@@ -1,6 +1,7 @@
 # 办公智盾资产分组 API 契约
 
 本文件只记录接口形态和程序执行规则，不保存 Cookie、Token 等认证信息。
+返回结构示例只表达字段结构，不提供可复用的 `guid`、`name` 等实际值；首次使用时应通过平台接口实时获取真实分组和终端信息。
 
 ## 通用
 
@@ -29,9 +30,9 @@ GET /groups
   "msg": "",
   "data": [
     {
-      "guid": "0f2736c478d44ecd99284c7393dfb18e",
-      "name": "全部终端",
-      "parentGuid": "-1",
+      "guid": "",
+      "name": "",
+      "parentGuid": "",
       "children": []
     }
   ]
@@ -59,9 +60,9 @@ GET /groups/{groupGuid}
   "code": 0,
   "msg": "",
   "data": {
-    "guid": "0f81104556f34db5bc012a460afdb21e",
-    "name": "门急诊",
-    "parentGuid": "0f2736c478d44ecd99284c7393dfb18e",
+    "guid": "",
+    "name": "",
+    "parentGuid": "",
     "children": []
   }
 }
@@ -84,8 +85,8 @@ POST /groups
 {
   "description": "",
   "lockChildGroupPolicy": false,
-  "name": "测试",
-  "parentGuid": "28b8e9390c4e4038b93503d41de2b6f1",
+  "name": "",
+  "parentGuid": "",
   "policyType": "",
   "autoGroupRule": {
     "ruleItemsBatch": [],
@@ -100,11 +101,11 @@ POST /groups
 ```json
 {
   "code": 0,
-  "msg": "保存成功",
+  "msg": "",
   "data": {
-    "guid": "cb3c1089dd0d4a87b845bf721fed7310",
-    "name": "测试",
-    "parentGuid": "28b8e9390c4e4038b93503d41de2b6f1",
+    "guid": "",
+    "name": "",
+    "parentGuid": "",
     "children": [],
     "terminals": []
   }
@@ -128,7 +129,7 @@ POST /terminals/query?curPage=1&pageSize=200
 ```json
 {
   "sort": "",
-  "groupGuidList": ["0f2736c478d44ecd99284c7393dfb18e"],
+  "groupGuidList": [""],
   "subProductCode": "DAS-UES-SMP",
   "includeChild": true,
   "dumbTerminal": 0
@@ -140,11 +141,11 @@ POST /terminals/query?curPage=1&pageSize=200
 ```json
 {
   "sort": "",
-  "groupGuidList": ["2ab8a04c63b94cc0934c50c87f2584f5"],
+  "groupGuidList": [""],
   "subProductCode": "DAS-UES-SMP",
   "includeChild": true,
   "dumbTerminal": 0,
-  "mac": "70:CF:49:AF:09:BF"
+  "mac": "AA:BB:CC:DD:EE:FF"
 }
 ```
 
@@ -155,15 +156,15 @@ POST /terminals/query?curPage=1&pageSize=200
   "code": 0,
   "msg": "",
   "data": {
-    "page": 1,
-    "pageSize": 200,
-    "totalRow": 474,
+    "page": 0,
+    "pageSize": 0,
+    "totalRow": 0,
     "list": [
       {
-        "guid": "369bf6a6-838e-201c-a679-cde2c14d9dec",
-        "terminalName": "3B3FYSB088",
-        "hostName": "3B3FYSB088",
-        "groupGuid": "2ab8a04c63b94cc0934c50c87f2584f5"
+        "guid": "",
+        "terminalName": "",
+        "hostName": "",
+        "groupGuid": ""
       }
     ]
   },
@@ -187,9 +188,9 @@ POST /terminals/move
 
 ```json
 {
-  "terminalGuidList": ["369bf6a6-838e-201c-a679-cde2c14d9dec"],
+  "terminalGuidList": [""],
   "groupGuidList": [],
-  "targetGroupGuid": "2ab8a04c63b94cc0934c50c87f2584f5"
+  "targetGroupGuid": ""
 }
 ```
 
@@ -199,7 +200,7 @@ POST /terminals/move
 [
   {
     "code": 0,
-    "msg": "编辑成功",
+    "msg": "",
     "data": null,
     "success": true
   }
