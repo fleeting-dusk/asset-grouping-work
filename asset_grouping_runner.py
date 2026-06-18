@@ -26,17 +26,18 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 
-DEFAULT_WORKDIR = Path("D:/tmp/asset-grouping-work")
+APP_DIR = Path(__file__).resolve().parent
+DEFAULT_WORKDIR = APP_DIR
 DEFAULT_TEMPLATE = DEFAULT_WORKDIR / "资产分组导入模板.xlsx"
 DEFAULT_CONFIG = DEFAULT_WORKDIR / "asset_grouping_config.json"
 
 
 DEFAULT_CONFIG_DATA = {
-    "template_path": str(DEFAULT_TEMPLATE),
-    "output_dir": str(DEFAULT_WORKDIR),
-    "api_base_url": "https://172.21.193.214:53443",
-    "internal_api_base_url": "https://172.21.193.214:53443",
-    "external_api_base_url": "https://192.168.224.84:53443",
+    "template_path": "资产分组导入模板.xlsx",
+    "output_dir": ".",
+    "api_base_url": "",
+    "internal_api_base_url": "",
+    "external_api_base_url": "",
     "query_scope_path": "全部终端",
     "internal_cookie": "",
     "external_cookie": "",
@@ -110,22 +111,45 @@ def save_config(config_path: Path, config: dict[str, Any]) -> None:
     config_path.write_text(json.dumps(ordered, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def apply_config(args: argparse.Namespace, config: dict[str, Any]) -> argparse.Namespace:
+def resolve_config_path(value: Any, config_path: Path, fallback: Path) -> str:
+    raw = text(value)
+    if not raw:
+        return str(fallback)
+    path = Path(raw)
+    if path.is_absolute():
+        return str(path)
+    return str((config_path.resolve().parent / path).resolve())
+
+
+def first_text(*values: Any) -> str:
+    for value in values:
+        content = text(value)
+        if content:
+            return content
+    return ""
+
+
+def apply_config(args: argparse.Namespace, config: dict[str, Any], config_path: Path) -> argparse.Namespace:
     cli_cookie = args.cookie
     env_cookie = os.getenv("UES_COOKIE") or os.getenv("OFFICE_SHIELD_COOKIE") or ""
     env_internal_cookie = os.getenv("UES_INTERNAL_COOKIE") or os.getenv("OFFICE_SHIELD_INTERNAL_COOKIE") or env_cookie
     env_external_cookie = os.getenv("UES_EXTERNAL_COOKIE") or os.getenv("OFFICE_SHIELD_EXTERNAL_COOKIE") or env_cookie
+    env_base_url = os.getenv("UES_API_BASE_URL") or os.getenv("OFFICE_SHIELD_API_BASE_URL") or ""
+    env_internal_base_url = os.getenv("UES_INTERNAL_API_BASE_URL") or os.getenv("OFFICE_SHIELD_INTERNAL_API_BASE_URL") or env_base_url
+    env_external_base_url = os.getenv("UES_EXTERNAL_API_BASE_URL") or os.getenv("OFFICE_SHIELD_EXTERNAL_API_BASE_URL") or ""
     common_cookie = text(config.get("cookie"))
     internal_cookie = text(config.get("internal_cookie")) or common_cookie
     external_cookie = text(config.get("external_cookie")) or common_cookie
-    legacy_base_url = text(config.get("api_base_url")) or DEFAULT_CONFIG_DATA["api_base_url"]
-    args.template = args.template or text(config.get("template_path")) or str(DEFAULT_TEMPLATE)
-    args.output_dir = args.output_dir or text(config.get("output_dir")) or str(DEFAULT_WORKDIR)
+    legacy_base_url = text(config.get("api_base_url"))
+    internal_config_base_url = text(config.get("internal_api_base_url")) or legacy_base_url
+    external_config_base_url = text(config.get("external_api_base_url"))
+    args.template = args.template or resolve_config_path(config.get("template_path"), config_path, DEFAULT_TEMPLATE)
+    args.output_dir = args.output_dir or resolve_config_path(config.get("output_dir"), config_path, DEFAULT_WORKDIR)
     args.cookie = cli_cookie if cli_cookie is not None else env_cookie or common_cookie
     args.internal_cookie = args.internal_cookie if args.internal_cookie is not None else cli_cookie or env_internal_cookie or internal_cookie
     args.external_cookie = args.external_cookie if args.external_cookie is not None else cli_cookie or env_external_cookie or external_cookie
-    args.internal_base_url = args.internal_base_url or args.base_url or text(config.get("internal_api_base_url")) or legacy_base_url
-    args.external_base_url = args.external_base_url or text(config.get("external_api_base_url")) or DEFAULT_CONFIG_DATA["external_api_base_url"]
+    args.internal_base_url = first_text(args.internal_base_url, args.base_url, env_internal_base_url, internal_config_base_url)
+    args.external_base_url = first_text(args.external_base_url, env_external_base_url, external_config_base_url)
     args.base_url = args.base_url if args.base_url is not None else args.internal_base_url
     args.default_network = args.default_network or text(config.get("default_network")) or "内网"
     args.query_scope_path = args.query_scope_path or text(config.get("query_scope_path")) or "全部终端"
@@ -1589,6 +1613,9 @@ def compare_export_groups(args: argparse.Namespace, export_path: Path) -> int:
     if not cookie:
         print("未配置 Cookie，无法查询平台实时分组。请先在配置中设置 Cookie，或使用 UES_COOKIE 环境变量。")
         return 2
+    if not base_url:
+        print("未配置 API 地址，无法查询平台实时分组。请先在配置中设置内网 API 地址，或使用 UES_INTERNAL_API_BASE_URL 环境变量。")
+        return 2
 
     client = ApiClient(base_url, cookie, insecure=not args.strict_tls)
     group_tree = client.get_groups()
@@ -1713,7 +1740,6 @@ def edit_config_menu(config_path: Path, config: dict[str, Any]) -> dict[str, Any
             value = input("内网 API 地址: ").strip()
             if value:
                 config["internal_api_base_url"] = value
-                config["api_base_url"] = value
         elif choice == "7":
             value = input("外网 API 地址: ").strip()
             if value:
@@ -1741,21 +1767,26 @@ def edit_config_menu(config_path: Path, config: dict[str, Any]) -> dict[str, Any
         print("配置已保存。")
 
 
-def refresh_args_from_config(args: argparse.Namespace, config: dict[str, Any]) -> argparse.Namespace:
+def refresh_args_from_config(args: argparse.Namespace, config: dict[str, Any], config_path: Path) -> argparse.Namespace:
     env_cookie = os.getenv("UES_COOKIE") or os.getenv("OFFICE_SHIELD_COOKIE") or ""
     env_internal_cookie = os.getenv("UES_INTERNAL_COOKIE") or os.getenv("OFFICE_SHIELD_INTERNAL_COOKIE") or env_cookie
     env_external_cookie = os.getenv("UES_EXTERNAL_COOKIE") or os.getenv("OFFICE_SHIELD_EXTERNAL_COOKIE") or env_cookie
+    env_base_url = os.getenv("UES_API_BASE_URL") or os.getenv("OFFICE_SHIELD_API_BASE_URL") or ""
+    env_internal_base_url = os.getenv("UES_INTERNAL_API_BASE_URL") or os.getenv("OFFICE_SHIELD_INTERNAL_API_BASE_URL") or env_base_url
+    env_external_base_url = os.getenv("UES_EXTERNAL_API_BASE_URL") or os.getenv("OFFICE_SHIELD_EXTERNAL_API_BASE_URL") or ""
     common_cookie = text(config.get("cookie"))
     internal_cookie = text(config.get("internal_cookie")) or common_cookie
     external_cookie = text(config.get("external_cookie")) or common_cookie
-    legacy_base_url = text(config.get("api_base_url")) or DEFAULT_CONFIG_DATA["api_base_url"]
-    args.template = text(config.get("template_path")) or str(DEFAULT_TEMPLATE)
-    args.output_dir = text(config.get("output_dir")) or str(DEFAULT_WORKDIR)
+    legacy_base_url = text(config.get("api_base_url"))
+    internal_config_base_url = text(config.get("internal_api_base_url")) or legacy_base_url
+    external_config_base_url = text(config.get("external_api_base_url"))
+    args.template = resolve_config_path(config.get("template_path"), config_path, DEFAULT_TEMPLATE)
+    args.output_dir = resolve_config_path(config.get("output_dir"), config_path, DEFAULT_WORKDIR)
     args.cookie = env_cookie or common_cookie
     args.internal_cookie = env_internal_cookie or internal_cookie
     args.external_cookie = env_external_cookie or external_cookie
-    args.internal_base_url = text(config.get("internal_api_base_url")) or legacy_base_url
-    args.external_base_url = text(config.get("external_api_base_url")) or DEFAULT_CONFIG_DATA["external_api_base_url"]
+    args.internal_base_url = first_text(env_internal_base_url, internal_config_base_url)
+    args.external_base_url = first_text(env_external_base_url, external_config_base_url)
     args.base_url = args.internal_base_url
     args.default_network = text(config.get("default_network")) or "内网"
     args.query_scope_path = text(config.get("query_scope_path")) or "全部终端"
@@ -1994,7 +2025,7 @@ def run_interactive(args: argparse.Namespace, config_path: Path, config: dict[st
             run_once(run_args)
         elif choice == "4":
             config = edit_config_menu(config_path, config)
-            args = refresh_args_from_config(args, config)
+            args = refresh_args_from_config(args, config, config_path)
         elif choice == "5":
             print_report_summary(Path(args.output_dir) / "asset-grouping-run-latest.json")
         elif choice == "6":
@@ -2044,7 +2075,7 @@ def main() -> int:
             raw_args.keep_history,
         ]
     )
-    args = apply_config(raw_args, config)
+    args = apply_config(raw_args, config, config_path)
     if args.compare_export:
         return compare_export_groups(args, Path(args.compare_export))
     if args.export_invalid_mac is not None:

@@ -4,12 +4,12 @@
 
 ## 通用
 
-- Base URL: `https://IP:Prot`
+- Base URL: `https://<host>:<port>`
 - 请求头:
   - `Accept: application/json, text/plain, */*`
   - `Content-Type: application/json`，仅 POST 必需
   - `Cookie: <运行时提供>`，不要写入模板或代码
-  - `Referer: https://IP:Prot/ues/base/terminals`
+  - `Referer: https://<host>:<port>/ues/base/terminals`
 - HTTPS 证书如为内网自签，执行器需要支持忽略证书校验的开关。
 - 成功判断以 `code === 0` 为主，部分接口还会带 `success: true`。
 
@@ -212,4 +212,3 @@ POST /terminals/move
 - 同一个 MAC 命中多个终端 GUID 时，把所有 GUID 一起移动到模板指定的目标分组。
 - 同一个 `terminalGuid + targetGroupGuid` 重复出现时去重。
 - 如果同一个终端 GUID 在同一次计划中指向多个目标分组，标记为冲突，不自动移动。
-
