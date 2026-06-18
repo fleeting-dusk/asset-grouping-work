@@ -16,6 +16,8 @@ group-export-compare-*.json
 group-export-compare-latest.json
 invalid-mac-*.xlsx
 invalid-mac-latest.xlsx
+unmapped-depts-*.xlsx
+unmapped-depts-latest.xlsx
 not-found-terminals-*.xlsx
 not-found-terminals-latest.xlsx
 

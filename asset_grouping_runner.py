@@ -76,6 +76,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--query-scope-path", default=None, help="查询终端的范围分组路径")
     parser.add_argument("--compare-export", default=None, help="比对平台实时分组与导出的分组 Excel")
     parser.add_argument("--export-invalid-mac", nargs="?", const="", default=None, help="导出终端清单中不合法的 MAC；可选输出 xlsx 路径")
+    parser.add_argument("--export-unmapped-depts", nargs="?", const="", default=None, help="导出有责任科室但未命中科室映射、且未手动指定分组的清单；可选输出 xlsx 路径")
     parser.add_argument("--export-not-found-terminals", nargs="?", const="", default=None, help="从最近报告导出平台未查询到的终端；可选输出 xlsx 路径")
     parser.add_argument("--execute", action="store_true", help="在模板 dry_run=FALSE 时真正执行建组和移动")
     parser.add_argument("--local-only", action="store_true", help="只解析模板，不访问平台")
@@ -450,6 +451,7 @@ def load_template_plan(template_path: Path, default_network: str = "internal") -
 
     validation: list[dict[str, Any]] = []
     move_plan: list[dict[str, Any]] = []
+    unmapped_dept_rows: list[dict[str, Any]] = []
 
     for terminal in terminal_rows:
         if terminal["networkEmpty"]:
@@ -499,6 +501,27 @@ def load_template_plan(template_path: Path, default_network: str = "internal") -
             else:
                 target_path = unmatched_path
                 target_source = "unmatched_fallback"
+                if terminal["dept"]:
+                    unmapped_dept_rows.append(
+                        {
+                            "sourceRow": terminal["sourceRow"],
+                            "assetCode": terminal["assetCode"],
+                            "mac": terminal["mac"],
+                            "apiMac": format_mac_for_api(terminal["mac"]),
+                            "normalizedMac": terminal["normalizedMac"],
+                            "hostname": terminal["hostname"],
+                            "dept": terminal["dept"],
+                            "networkArea": terminal["networkArea"] or network_label(terminal["networkKey"]),
+                            "networkKey": terminal["networkKey"],
+                            "networkName": network_label(terminal["networkKey"]),
+                            "targetPath": target_path,
+                            "location": " / ".join(
+                                item
+                                for item in [terminal["campus"], terminal["building"], terminal["floor"], terminal["area"], terminal["location"]]
+                                if item
+                            ),
+                        }
+                    )
                 validation.append(
                     {
                         "source": "终端清单",
@@ -598,6 +621,8 @@ def load_template_plan(template_path: Path, default_network: str = "internal") -
             "moveVerifyDelaySeconds": max(0.0, float(text(config.get("move_verify_delay_seconds")) or "0.8")),
             "createDeclaredGroupsWithoutTerminals": create_declared_groups_without_terminals,
             "rootPath": normalize_path(config.get("root_path") or "全部终端", separator),
+            "unmatchedPath": unmatched_path,
+            "blankDeptLiteral": blank_dept_literal,
             "separator": separator,
             "multiTerminalMatchPolicy": "move_all_matches_to_target_group",
         },
@@ -613,11 +638,14 @@ def load_template_plan(template_path: Path, default_network: str = "internal") -
                 key: sum(1 for item in move_plan if item.get("networkKey") == key)
                 for key in NETWORK_ORDER
             },
+            "unmappedDeptRows": len(unmapped_dept_rows),
+            "unmappedDepartments": len({item["dept"] for item in unmapped_dept_rows}),
             "validationErrors": sum(1 for item in validation if item["severity"] == "error"),
             "validationWarnings": sum(1 for item in validation if item["severity"] == "warning"),
         },
         "createGroupPlan": create_group_plan,
         "targetGroupUsage": target_group_usage,
+        "unmappedDeptRows": unmapped_dept_rows,
         "movePlan": move_plan,
         "validation": validation,
     }
@@ -1206,6 +1234,8 @@ def build_text_summary(report: dict[str, Any]) -> str:
             if value
         ]
         lines.append(f"终端网络分布: {'，'.join(network_parts) if network_parts else '无'}")
+    if counts.get("unmappedDeptRows"):
+        lines.append(f"未映射责任科室: {counts.get('unmappedDepartments', 0)} 个，涉及终端 {counts.get('unmappedDeptRows', 0)} 行")
     lines.append(f"错误: {len(errors)}，警告: {len(warnings)}")
 
     platform_runs = report.get("platformRuns") or []
@@ -1447,6 +1477,123 @@ def export_invalid_macs(args: argparse.Namespace, output_path: Path | None = Non
         print("前 10 条:")
         for item in invalid_rows[:10]:
             print(f"- 行 {item['sourceRow']} | {item['assetCode']} | {item['mac']} | {item['reason']}")
+    return 0
+
+
+def style_export_sheet(ws: Any, fill_color: str = "FFF2CC", max_width: int = 65) -> None:
+    header_fill = PatternFill("solid", fgColor="1F4E78")
+    row_fill = PatternFill("solid", fgColor=fill_color)
+    white_font = Font(color="FFFFFF", bold=True)
+    thin = Side(style="thin", color="D9E2F3")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    for row in ws.iter_rows():
+        for cell in row:
+            cell.border = border
+            cell.alignment = Alignment(vertical="top", wrap_text=True)
+    for cell in ws[1]:
+        cell.fill = header_fill
+        cell.font = white_font
+        cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    for row in ws.iter_rows(min_row=2):
+        for cell in row:
+            cell.fill = row_fill
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = ws.dimensions
+    for col in range(1, ws.max_column + 1):
+        column = get_column_letter(col)
+        max_len = max(len(str(cell.value or "")) for cell in ws[column])
+        ws.column_dimensions[column].width = min(max(max_len + 2, 10), max_width)
+
+
+def export_unmapped_departments(args: argparse.Namespace, output_path: Path | None = None) -> int:
+    template_path = Path(args.template)
+    output_dir = Path(args.output_dir)
+    default_network_key = normalize_network_key(getattr(args, "default_network", "内网"), "internal")
+    plan = load_template_plan(template_path, default_network_key)
+    rows = list(plan.get("unmappedDeptRows") or [])
+    output_path = output_path or output_dir / "unmapped-depts-latest.xlsx"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    by_dept: dict[str, dict[str, Any]] = {}
+    for item in rows:
+        dept = text(item.get("dept"))
+        if not dept:
+            continue
+        summary = by_dept.setdefault(
+            dept,
+            {
+                "dept": dept,
+                "count": 0,
+                "networks": set(),
+                "sourceRows": [],
+                "assetCodes": [],
+                "hostnames": [],
+                "locations": [],
+                "fallbackPath": item.get("targetPath", ""),
+            },
+        )
+        summary["count"] += 1
+        summary["networks"].add(item.get("networkName", ""))
+        summary["sourceRows"].append(str(item.get("sourceRow", "")))
+        for key, target in [("assetCode", "assetCodes"), ("hostname", "hostnames"), ("location", "locations")]:
+            value = text(item.get(key))
+            if value and value not in summary[target]:
+                summary[target].append(value)
+
+    summaries = sorted(by_dept.values(), key=lambda item: (-item["count"], item["dept"]))
+
+    workbook = Workbook()
+    ws = workbook.active
+    ws.title = "未映射责任科室"
+    ws.append(["设备责任科室", "终端数", "网络", "源行", "样例资产编号", "样例主机名", "样例位置", "当前兜底分组", "建议"])
+    for item in summaries:
+        ws.append(
+            [
+                item["dept"],
+                item["count"],
+                "、".join(sorted(value for value in item["networks"] if value)),
+                "、".join(item["sourceRows"][:60]),
+                "、".join(item["assetCodes"][:10]),
+                "、".join(item["hostnames"][:10]),
+                "；".join(item["locations"][:5]),
+                item["fallbackPath"],
+                "请在“科室映射”新增此责任科室到目标分组的映射，或在终端清单手动填写目标分组路径。",
+            ]
+        )
+
+    detail_ws = workbook.create_sheet("终端明细")
+    detail_ws.append(["源行", "网络", "资产编号", "原MAC", "查询MAC", "主机名", "设备责任科室", "当前兜底分组", "位置"])
+    for item in rows:
+        detail_ws.append(
+            [
+                item.get("sourceRow", ""),
+                item.get("networkName", ""),
+                item.get("assetCode", ""),
+                item.get("mac", ""),
+                item.get("apiMac", ""),
+                item.get("hostname", ""),
+                item.get("dept", ""),
+                item.get("targetPath", ""),
+                item.get("location", ""),
+            ]
+        )
+
+    style_export_sheet(ws, "FFF2CC")
+    style_export_sheet(detail_ws, "FFF2CC")
+    workbook.save(output_path)
+
+    print("\n未映射责任科室导出完成")
+    print("-" * 60)
+    print(f"模板: {template_path}")
+    print(f"责任科室: {len(summaries)} 个")
+    print(f"终端行: {len(rows)} 行")
+    print(f"路径: {output_path}")
+    if summaries:
+        print("前 10 个责任科室:")
+        for item in summaries[:10]:
+            print(f"- {item['dept']} | {item['count']} 行 | 当前进入 {item['fallbackPath']}")
+    else:
+        print("未发现“有责任科室但未映射、且未手动指定分组”的终端。")
     return 0
 
 
@@ -1992,6 +2139,7 @@ def run_interactive(args: argparse.Namespace, config_path: Path, config: dict[st
         print("6. 比对导出的分组 Excel")
         print("7. 导出不合法 MAC")
         print("8. 导出未查询到终端")
+        print("9. 导出未映射责任科室")
         print("0. 退出")
         choice = input("请选择: ").strip()
 
@@ -2038,6 +2186,8 @@ def run_interactive(args: argparse.Namespace, config_path: Path, config: dict[st
             export_invalid_macs(args)
         elif choice == "8":
             export_not_found_terminals(args)
+        elif choice == "9":
+            export_unmapped_departments(args)
         else:
             print("无效选项。")
 
@@ -2070,6 +2220,7 @@ def main() -> int:
             raw_args.query_scope_path,
             raw_args.compare_export,
             raw_args.export_invalid_mac is not None,
+            raw_args.export_unmapped_depts is not None,
             raw_args.export_not_found_terminals is not None,
             raw_args.strict_tls,
             raw_args.keep_history,
@@ -2081,6 +2232,9 @@ def main() -> int:
     if args.export_invalid_mac is not None:
         output_path = Path(args.export_invalid_mac) if text(args.export_invalid_mac) else None
         return export_invalid_macs(args, output_path)
+    if args.export_unmapped_depts is not None:
+        output_path = Path(args.export_unmapped_depts) if text(args.export_unmapped_depts) else None
+        return export_unmapped_departments(args, output_path)
     if args.export_not_found_terminals is not None:
         output_path = Path(args.export_not_found_terminals) if text(args.export_not_found_terminals) else None
         return export_not_found_terminals(args, output_path)

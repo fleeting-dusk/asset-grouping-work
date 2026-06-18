@@ -67,6 +67,7 @@ python .\asset_grouping_runner.py
 - 查看最近报告
 - 比对导出的分组 Excel
 - 导出不合法 MAC
+- 导出未映射责任科室
 - 导出未查询到终端
 
 ## 常用命令
@@ -106,6 +107,14 @@ python .\asset_grouping_runner.py --compare-export .\分组数据.xlsx
 ```powershell
 python .\asset_grouping_runner.py --export-invalid-mac
 ```
+
+导出未映射责任科室：
+
+```powershell
+python .\asset_grouping_runner.py --export-unmapped-depts
+```
+
+这个检查只解析模板，不访问平台。它会找出“手动目标分组路径为空、设备责任科室有值、但科室映射未命中”的终端，并按责任科室汇总，方便补 `科室映射`。
 
 导出平台未查询到的终端：
 
